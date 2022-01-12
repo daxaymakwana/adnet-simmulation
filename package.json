@@ -27,7 +27,7 @@
     "healthpoint": "^1.0.0",
     "http-hash-router": "^2.0.1",
     "productionize": "^4.1.0",
-    "redis": "^4.0.1",
+    "redis": "^3.0.2",
     "req-logger": "^2.0.0",
     "send-data": "^8.0.0"
   },
