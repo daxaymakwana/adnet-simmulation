@@ -6,6 +6,7 @@ var servertest = require('servertest')
 var server = require('../lib/server')
 const redis = require('../lib/redis')
 const { toRedisPromise } = require('../lib/util')
+const redisNamespaces = require('../lib/helper/redis-namespaces')
 
 const mockTargets = [
   {
@@ -61,10 +62,10 @@ test.serial('Create Target', async (t) => {
   await toRedisPromise(redis.FLUSHDB)()
   const url = '/api/targets'
   const targetPayload = mockTargets[0]
-  const currentTargetSeq = await toRedisPromise(redis.GET)('targets:seq_count') || 0
+  const currentTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
   try {
     const res = await servertestPromise(server(), url, { method: 'POST' }, JSON.stringify(targetPayload))
-    const latestTargetSeq = await toRedisPromise(redis.GET)('targets:seq_count') || 0
+    const latestTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
 
     // test response
     t.is(res.statusCode, 201, 'correct statusCode')
@@ -74,7 +75,7 @@ test.serial('Create Target', async (t) => {
     t.is(latestTargetSeq, currentTargetSeq + 1, 'Correct Target Seq Increment')
 
     // check target object
-    const target = await toRedisPromise(redis.HGETALL)(`targets:${latestTargetSeq}`)
+    const target = await toRedisPromise(redis.HGETALL)(redisNamespaces.targets.id(latestTargetSeq))
     t.is(Number(target.id), latestTargetSeq)
     t.is(target.url, targetPayload.url)
     t.is(target.value, targetPayload.value)
