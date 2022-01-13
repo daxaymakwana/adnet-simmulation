@@ -149,3 +149,41 @@ test.serial('Update Target By Id', async (t) => {
     t.fail('Error in Calling the API: ' + error)
   }
 })
+
+test.serial('Next Route API', async (t) => {
+  await toRedisPromise(redis.FLUSHDB)()
+  const targetUrl = '/api/targets'
+  await Promise.all([
+    servertestPromise(server(), targetUrl, { method: 'POST' }, JSON.stringify(mockTargets[0])),
+    servertestPromise(server(), targetUrl, { method: 'POST' }, JSON.stringify(mockTargets[1]))
+  ])
+  const nextRouteUrl = 'route'
+  try {
+    const payload = {
+      geoState: 'ca',
+      publisher: 'abc',
+      timestamp: '2018-07-18T18:28:59.513Z'
+    }
+    const res = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+    t.is(res.statusCode, 200, 'correct statusCode')
+
+    t.truthy(res.body, 'must have data')
+    t.is(res.body.url, mockTargets[0].url, 'Next url matched')
+
+    for (let i = 0; i < 10; i++) {
+      const res = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+      t.is(res.statusCode, 200, 'correct statusCode')
+
+      t.truthy(res.body, 'must have data')
+      t.is(res.body.url, mockTargets[1].url, 'Next url matched')
+    }
+
+    const res1 = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+    t.is(res1.statusCode, 200, 'correct statusCode')
+
+    t.truthy(res1.body, 'must have data')
+    t.is(res1.body.decision, 'reject', 'Must rejected the API')
+  } catch (error) {
+    t.fail('Error in Calling the API: ' + error)
+  }
+})
