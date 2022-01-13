@@ -119,3 +119,33 @@ test.serial('Get Target By Id', async (t) => {
     t.fail('Error in Calling the API: ' + error)
   }
 })
+
+test.serial('Update Target By Id', async (t) => {
+  const currentTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
+  const url = `/api/targets/${currentTargetSeq}`
+  try {
+    const targetPayload = {
+      url: 'http://example3.com',
+      value: '0.10',
+      maxAcceptsPerDay: '10',
+      accept: {
+        geoState: ['ca', 'ny'],
+        hour: ['17', '18', '19', '20']
+      }
+    }
+    const res = await servertestPromise(server(), url, { method: 'POST' }, JSON.stringify(targetPayload))
+    t.is(res.statusCode, 200, 'correct statusCode')
+    t.is(res.body.msg, 'updated successfully', 'success message')
+
+    // check target object
+    const target = await toRedisPromise(redis.HGETALL)(redisNamespaces.targets.id(currentTargetSeq))
+
+    t.is(Number(target.id), currentTargetSeq, 'target id match')
+    t.is(target.url, targetPayload.url, 'target url matched')
+    t.is(target.value, targetPayload.value, 'target value matched')
+    t.is(target.maxAcceptsPerDay, targetPayload.maxAcceptsPerDay, 'target maxAcceptsPerDay matched')
+    t.is(target.accept, JSON.stringify(targetPayload.accept), 'target accept matched')
+  } catch (error) {
+    t.fail('Error in Calling the API: ' + error)
+  }
+})
