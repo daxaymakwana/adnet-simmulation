@@ -6,6 +6,7 @@ var servertest = require('servertest')
 var server = require('../lib/server')
 const redis = require('../lib/redis')
 const { toRedisPromise } = require('../lib/util')
+const redisNamespaces = require('../lib/helper/redis-namespaces')
 
 const mockTargets = [
   {
@@ -61,10 +62,10 @@ test.serial('Create Target', async (t) => {
   await toRedisPromise(redis.FLUSHDB)()
   const url = '/api/targets'
   const targetPayload = mockTargets[0]
-  const currentTargetSeq = await toRedisPromise(redis.GET)('targets:seq_count') || 0
+  const currentTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
   try {
     const res = await servertestPromise(server(), url, { method: 'POST' }, JSON.stringify(targetPayload))
-    const latestTargetSeq = await toRedisPromise(redis.GET)('targets:seq_count') || 0
+    const latestTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
 
     // test response
     t.is(res.statusCode, 201, 'correct statusCode')
@@ -74,12 +75,12 @@ test.serial('Create Target', async (t) => {
     t.is(latestTargetSeq, currentTargetSeq + 1, 'Correct Target Seq Increment')
 
     // check target object
-    const target = await toRedisPromise(redis.HGETALL)(`targets:${latestTargetSeq}`)
+    const target = await toRedisPromise(redis.HGETALL)(redisNamespaces.targets.id(latestTargetSeq))
     t.is(Number(target.id), latestTargetSeq)
-    t.is(target.url, targetPayload.url)
-    t.is(target.value, targetPayload.value)
-    t.is(target.maxAcceptsPerDay, targetPayload.maxAcceptsPerDay)
-    t.is(target.accept, JSON.stringify(targetPayload.accept))
+    t.is(target.url, targetPayload.url, 'target url matched')
+    t.is(target.value, targetPayload.value, 'target value matched')
+    t.is(target.maxAcceptsPerDay, targetPayload.maxAcceptsPerDay, 'target maxAcceptsPerDay matched')
+    t.is(target.accept, JSON.stringify(targetPayload.accept), 'target accept matched')
   } catch (error) {
     t.fail('Error in Calling the API: ' + error)
   }
@@ -93,10 +94,95 @@ test.serial('List Targets', async (t) => {
     t.truthy(res.body.data, 'have data')
     t.truthy(res.body.data[0], 'have data[0]')
     t.truthy(res.body.data[0].id, 'have data[0].id')
-    t.is(res.body.data[0].url, mockTargets[0].url)
-    t.is(res.body.data[0].value, mockTargets[0].value)
-    t.is(res.body.data[0].maxAcceptsPerDay, mockTargets[0].maxAcceptsPerDay)
-    t.deepEqual(res.body.data[0].accept, mockTargets[0].accept)
+    t.is(res.body.data[0].url, mockTargets[0].url, 'target url matched')
+    t.is(res.body.data[0].value, mockTargets[0].value, 'target value matched')
+    t.is(res.body.data[0].maxAcceptsPerDay, mockTargets[0].maxAcceptsPerDay, 'target maxAcceptsPerDay matched')
+    t.deepEqual(res.body.data[0].accept, mockTargets[0].accept, 'target accept matched')
+  } catch (error) {
+    t.fail('Error in Calling the API: ' + error)
+  }
+})
+
+test.serial('Get Target By Id', async (t) => {
+  const currentTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
+  const url = `/api/targets/${currentTargetSeq}`
+  try {
+    const res = await servertestPromise(server(), url)
+    t.is(res.statusCode, 200, 'correct statusCode')
+    t.truthy(res.body.data, 'have data')
+    t.is(Number(res.body.data.id), currentTargetSeq, 'target id match')
+    t.is(res.body.data.url, mockTargets[0].url, 'target url matched')
+    t.is(res.body.data.value, mockTargets[0].value, 'target value matched')
+    t.is(res.body.data.maxAcceptsPerDay, mockTargets[0].maxAcceptsPerDay, 'target maxAcceptsPerDay matched')
+    t.deepEqual(res.body.data.accept, mockTargets[0].accept, 'target accept matched')
+  } catch (error) {
+    t.fail('Error in Calling the API: ' + error)
+  }
+})
+
+test.serial('Update Target By Id', async (t) => {
+  const currentTargetSeq = await toRedisPromise(redis.GET)(redisNamespaces.targets.seqCount) || 0
+  const url = `/api/targets/${currentTargetSeq}`
+  try {
+    const targetPayload = {
+      url: 'http://example3.com',
+      value: '0.10',
+      maxAcceptsPerDay: '10',
+      accept: {
+        geoState: ['ca', 'ny'],
+        hour: ['17', '18', '19', '20']
+      }
+    }
+    const res = await servertestPromise(server(), url, { method: 'POST' }, JSON.stringify(targetPayload))
+    t.is(res.statusCode, 200, 'correct statusCode')
+    t.is(res.body.msg, 'updated successfully', 'success message')
+
+    // check target object
+    const target = await toRedisPromise(redis.HGETALL)(redisNamespaces.targets.id(currentTargetSeq))
+
+    t.is(Number(target.id), currentTargetSeq, 'target id match')
+    t.is(target.url, targetPayload.url, 'target url matched')
+    t.is(target.value, targetPayload.value, 'target value matched')
+    t.is(target.maxAcceptsPerDay, targetPayload.maxAcceptsPerDay, 'target maxAcceptsPerDay matched')
+    t.is(target.accept, JSON.stringify(targetPayload.accept), 'target accept matched')
+  } catch (error) {
+    t.fail('Error in Calling the API: ' + error)
+  }
+})
+
+test.serial('Next Route API', async (t) => {
+  await toRedisPromise(redis.FLUSHDB)()
+  const targetUrl = '/api/targets'
+  await Promise.all([
+    servertestPromise(server(), targetUrl, { method: 'POST' }, JSON.stringify(mockTargets[0])),
+    servertestPromise(server(), targetUrl, { method: 'POST' }, JSON.stringify(mockTargets[1]))
+  ])
+  const nextRouteUrl = 'route'
+  try {
+    const payload = {
+      geoState: 'ca',
+      publisher: 'abc',
+      timestamp: '2018-07-18T18:28:59.513Z'
+    }
+    const res = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+    t.is(res.statusCode, 200, 'correct statusCode')
+
+    t.truthy(res.body, 'must have data')
+    t.is(res.body.url, mockTargets[0].url, 'Next url matched')
+
+    for (let i = 0; i < 10; i++) {
+      const res = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+      t.is(res.statusCode, 200, 'correct statusCode')
+
+      t.truthy(res.body, 'must have data')
+      t.is(res.body.url, mockTargets[1].url, 'Next url matched')
+    }
+
+    const res1 = await servertestPromise(server(), nextRouteUrl, { method: 'POST' }, JSON.stringify(payload))
+    t.is(res1.statusCode, 200, 'correct statusCode')
+
+    t.truthy(res1.body, 'must have data')
+    t.is(res1.body.decision, 'reject', 'Must rejected the API')
   } catch (error) {
     t.fail('Error in Calling the API: ' + error)
   }
